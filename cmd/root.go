@@ -9,6 +9,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
+	"github.com/vinaocruz/go-extractor/src/handler"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -50,10 +51,14 @@ func init() {
 }
 
 func startWebServer() {
-	router := gin.Default()
-	router.GET("/ping", func(c *gin.Context) {
+	r := gin.Default()
+	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "OK"})
 	})
 
-	router.Run(":8080")
+	handler.NewNegociationHandler(&handler.Config{
+		Router: r,
+	})
+
+	r.Run(":8080")
 }

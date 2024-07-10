@@ -5,45 +5,89 @@ package cmd
 
 import (
 	"fmt"
+	"log"
+	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/vinaocruz/go-extractor/src/model"
+	"github.com/vinaocruz/go-extractor/src/repository"
+	"github.com/vinaocruz/go-extractor/src/service"
 )
+
+type DataImportCmd struct {
+	Repo    repository.NegociationRepository
+	Service service.FileManager
+}
 
 const (
 	importShortDesc = "A brief description of your command"
 	importLongDesc  = "A longer description that spans multiple lines and likely contains examples"
 )
 
-// dataImportCmd represents the dataImport command
-var dataImportCmd = &cobra.Command{
-	Use:   "dataImport",
-	Short: importShortDesc,
-	Long:  importLongDesc,
-	Run: func(cmd *cobra.Command, args []string) {
-		execute()
-	},
+func NewDataImportCmd() *cobra.Command {
+	dataImport := &DataImportCmd{
+		Repo:    repository.NewNegociationRepository(),
+		Service: service.NewLocalFileManager(),
+	}
+
+	var dataImportCmd = &cobra.Command{
+		Use:   "dataImport",
+		Short: importShortDesc,
+		Long:  importLongDesc,
+		Run: func(cmd *cobra.Command, args []string) {
+			files := []string{
+				"storage/example/27-06-2024_NEGOCIOSAVISTA.txt",
+				"storage/example/28-06-2024_NEGOCIOSAVISTA.txt",
+				"storage/example/01-07-2024_NEGOCIOSAVISTA.txt",
+				"storage/example/02-07-2024_NEGOCIOSAVISTA.txt",
+				"storage/example/03-07-2024_NEGOCIOSAVISTA.txt",
+				"storage/example/04-07-2024_NEGOCIOSAVISTA.txt",
+				"storage/example/05-07-2024_NEGOCIOSAVISTA.txt",
+			}
+
+			dataImport.execute(files)
+		},
+	}
+
+	return dataImportCmd
 }
 
-func execute() {
-	downloadData()
-	extractData()
-	insertData()
-}
+func (dm *DataImportCmd) execute(files []string) {
+	var wg sync.WaitGroup
 
-func downloadData() {
-	fmt.Println("downloading...")
-}
+	batchCh := make(chan []model.Negociation, len(files))
 
-func extractData() {
-	fmt.Println("extracting...")
-}
+	for _, file := range files {
+		wg.Add(1)
+		go func(filename string) {
+			defer wg.Done()
+			dm.Service.ReadFile(filename, batchCh)
+		}(file)
+	}
 
-func insertData() {
-	fmt.Println("inserting...")
+	go func() {
+		for lines := range batchCh {
+			start := time.Now()
+			dm.Repo.BulkImport(lines)
+			elapsed := time.Since(start)
+			log.Printf("Bulk imported in %s", elapsed)
+		}
+	}()
+
+	wg.Wait()
+	close(batchCh)
+
+	dm.Repo.SetupIndex()
+
+	fmt.Println("Import finished!")
 }
 
 func init() {
-	rootCmd.AddCommand(dataImportCmd)
+	rootCmd.AddCommand(
+		NewDataImportCmd(),
+	)
 
 	// Here you will define your flags and configuration settings.
 
