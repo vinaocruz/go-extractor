@@ -17,8 +17,9 @@ import (
 )
 
 type DataImportCmd struct {
-	Repo    repository.NegociationRepository
-	Service service.FileManager
+	Repo        repository.NegociationRepository
+	Service     service.FileManager
+	DownService service.DownloadManager
 }
 
 const (
@@ -28,8 +29,9 @@ const (
 
 func NewDataImportCmd() *cobra.Command {
 	dataImport := &DataImportCmd{
-		Repo:    repository.NewNegociationRepository(),
-		Service: service.NewLocalFileManager(),
+		Repo:        repository.NewNegociationRepository(),
+		Service:     service.NewLocalFileManager(),
+		DownService: service.NewDownloadManager(),
 	}
 
 	var dataImportCmd = &cobra.Command{
@@ -38,13 +40,13 @@ func NewDataImportCmd() *cobra.Command {
 		Long:  importLongDesc,
 		Run: func(cmd *cobra.Command, args []string) {
 			files := []string{
-				"storage/example/27-06-2024_NEGOCIOSAVISTA.txt",
-				"storage/example/28-06-2024_NEGOCIOSAVISTA.txt",
-				"storage/example/01-07-2024_NEGOCIOSAVISTA.txt",
-				"storage/example/02-07-2024_NEGOCIOSAVISTA.txt",
-				"storage/example/03-07-2024_NEGOCIOSAVISTA.txt",
-				"storage/example/04-07-2024_NEGOCIOSAVISTA.txt",
-				"storage/example/05-07-2024_NEGOCIOSAVISTA.txt",
+				"storage/example/27-06-2024_NEGOCIOSAVISTA.zip",
+				"storage/example/28-06-2024_NEGOCIOSAVISTA.zip",
+				"storage/example/01-07-2024_NEGOCIOSAVISTA.zip",
+				"storage/example/02-07-2024_NEGOCIOSAVISTA.zip",
+				"storage/example/03-07-2024_NEGOCIOSAVISTA.zip",
+				"storage/example/04-07-2024_NEGOCIOSAVISTA.zip",
+				"storage/example/05-07-2024_NEGOCIOSAVISTA.zip",
 			}
 
 			dataImport.execute(files)
@@ -54,7 +56,9 @@ func NewDataImportCmd() *cobra.Command {
 	return dataImportCmd
 }
 
-func (dm *DataImportCmd) execute(files []string) {
+func (dm *DataImportCmd) execute(zipFiles []string) {
+	files := dm.extract(zipFiles)
+
 	var wg sync.WaitGroup
 
 	batchCh := make(chan []model.Negociation, len(files))
@@ -82,6 +86,20 @@ func (dm *DataImportCmd) execute(files []string) {
 	dm.Repo.SetupIndex()
 
 	fmt.Println("Import finished!")
+}
+
+func (dm *DataImportCmd) extract(zipFiles []string) []string {
+	var wg sync.WaitGroup
+	var files []string
+
+	for _, zipFile := range zipFiles {
+		wg.Add(1)
+		go dm.DownService.ExtractZipFile(zipFile, &files, &wg)
+	}
+
+	wg.Wait()
+
+	return files
 }
 
 func init() {
