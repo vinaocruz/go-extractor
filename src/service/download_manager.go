@@ -23,7 +23,7 @@ type DownloadManager interface {
 type LocalDownloadManager struct {
 }
 
-func NewDownloadManager() *LocalDownloadManager {
+func NewDownloadManager() DownloadManager {
 	return &LocalDownloadManager{}
 }
 

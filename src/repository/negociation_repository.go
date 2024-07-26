@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/lib/pq"
@@ -17,22 +19,28 @@ type NegociationRepository interface {
 	BulkImport(toInsert []model.Negociation)
 	Find(ticker, transactionAt string) (dto.Negociation, error)
 	SetupIndex()
+	CloseConn()
 }
 
 type PostgresNegociationRepository struct {
 }
 
-func NewNegociationRepository() *PostgresNegociationRepository {
+var db *sqlx.DB
+var once sync.Once
+
+func NewNegociationRepository() NegociationRepository {
 	return &PostgresNegociationRepository{}
 }
 
 func (r *PostgresNegociationRepository) BulkImport(toInsert []model.Negociation) {
+	start := time.Now()
+
 	db, err := r.getConnection()
 	if err != nil {
 		log.Fatal("Failed to connect to database: ", err)
 	}
 
-	defer db.Close()
+	// defer db.Close()
 
 	txn, err := db.Begin()
 	if err != nil {
@@ -65,6 +73,9 @@ func (r *PostgresNegociationRepository) BulkImport(toInsert []model.Negociation)
 	if err != nil {
 		log.Fatal("Failed to commit transaction: ", err)
 	}
+
+	elapsed := time.Since(start)
+	log.Printf("Bulk imported in %s", elapsed)
 }
 
 func (r *PostgresNegociationRepository) Find(ticker, transactionAt string) (dto.Negociation, error) {
@@ -130,6 +141,9 @@ func (r *PostgresNegociationRepository) Find(ticker, transactionAt string) (dto.
 }
 
 func (r *PostgresNegociationRepository) SetupIndex() {
+	fmt.Println("Setting up index...")
+	start := time.Now()
+
 	db, err := r.getConnection()
 	if err != nil {
 		log.Fatal("Failed to connect to database: ", err)
@@ -143,22 +157,33 @@ func (r *PostgresNegociationRepository) SetupIndex() {
 	if err != nil {
 		log.Fatal("Failed to create index: ", err)
 	}
+
+	elapsed := time.Since(start)
+	log.Printf("Index setup in %s", elapsed)
 }
 
 func (r *PostgresNegociationRepository) getConnection() (*sqlx.DB, error) {
-	db, err := sqlx.Connect(
-		"postgres",
-		fmt.Sprintf("user=%s dbname=%s sslmode=disable password=%s host=%s", os.Getenv("DB_USER"), os.Getenv("DB_NAME"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_HOST")),
-	)
+	once.Do(func() {
+		fmt.Println("Connecting to database...")
+		dbTmp, _ := sqlx.Connect(
+			"postgres",
+			fmt.Sprintf("user=%s dbname=%s sslmode=disable password=%s host=%s", os.Getenv("DB_USER"), os.Getenv("DB_NAME"), os.Getenv("DB_PASSWORD"), os.Getenv("DB_HOST")),
+		)
+		db = dbTmp
+	})
 
-	if err != nil {
-		return nil, err
-	}
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	if err := db.Ping(); err != nil {
-		fmt.Println("Failed to ping")
-		return nil, err
-	}
+	// if err := db.Ping(); err != nil {
+	// 	fmt.Println("Failed to ping")
+	// 	return nil, err
+	// }
 
 	return db, nil
+}
+
+func (r *PostgresNegociationRepository) CloseConn() {
+	db.Close()
 }

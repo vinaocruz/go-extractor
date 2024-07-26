@@ -7,26 +7,24 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/vinaocruz/go-extractor/src/model"
 )
 
-const (
-	batchSize = 500000
-)
-
 type FileManager interface {
-	ReadFile(file string, batchCh chan<- []model.Negociation)
+	ReadFile(file string, batchCh chan<- model.Negociation, wg *sync.WaitGroup)
 }
 
 type LocalFileManager struct {
 }
 
-func NewLocalFileManager() *LocalFileManager {
+func NewLocalFileManager() FileManager {
 	return &LocalFileManager{}
 }
 
-func (fm *LocalFileManager) ReadFile(file string, batchCh chan<- []model.Negociation) {
+func (fm *LocalFileManager) ReadFile(file string, batchCh chan<- model.Negociation, wg *sync.WaitGroup) {
+	defer wg.Done()
 	fmt.Println("reading " + file + "...")
 
 	f, err := os.Open(file)
@@ -37,8 +35,6 @@ func (fm *LocalFileManager) ReadFile(file string, batchCh chan<- []model.Negocia
 
 	scan := bufio.NewScanner(f)
 
-	var lines []model.Negociation
-
 	ignoreFirstLine := true
 	for scan.Scan() {
 		if ignoreFirstLine {
@@ -46,15 +42,7 @@ func (fm *LocalFileManager) ReadFile(file string, batchCh chan<- []model.Negocia
 			continue
 		}
 
-		lines = append(lines, fm.parseLine(scan.Text()))
-		if len(lines) >= batchSize {
-			batchCh <- lines
-			lines = []model.Negociation{}
-		}
-	}
-
-	if len(lines) > 0 {
-		batchCh <- lines
+		batchCh <- fm.parseLine(scan.Text())
 	}
 
 	if err := scan.Err(); err != nil {

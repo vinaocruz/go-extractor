@@ -5,6 +5,7 @@ services:
     image: postgres
     # set shared memory limit when using docker-compose
     shm_size: 128mb
+    command: -c 'max_connections=500'
     ports: 
       - "5432:5432"
     environment:

@@ -5,15 +5,17 @@ package cmd
 
 import (
 	"fmt"
-	"log"
 	"sync"
-	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/vinaocruz/go-extractor/src/model"
 	"github.com/vinaocruz/go-extractor/src/repository"
 	"github.com/vinaocruz/go-extractor/src/service"
+)
+
+const (
+	batchSize = 500000
 )
 
 type DataImportCmd struct {
@@ -61,22 +63,29 @@ func (dm *DataImportCmd) execute(zipFiles []string) {
 
 	var wg sync.WaitGroup
 
-	batchCh := make(chan []model.Negociation, len(files))
+	batchCh := make(chan model.Negociation, len(files))
 
 	for _, file := range files {
 		wg.Add(1)
-		go func(filename string) {
-			defer wg.Done()
-			dm.Service.ReadFile(filename, batchCh)
-		}(file)
+		go dm.Service.ReadFile(file, batchCh, &wg)
 	}
 
 	go func() {
+		defer dm.Repo.CloseConn()
+		var linesSlice []model.Negociation
+
 		for lines := range batchCh {
-			start := time.Now()
-			dm.Repo.BulkImport(lines)
-			elapsed := time.Since(start)
-			log.Printf("Bulk imported in %s", elapsed)
+			linesSlice = append(linesSlice, lines)
+
+			if len(linesSlice) >= batchSize {
+				dm.Repo.BulkImport(linesSlice)
+
+				linesSlice = []model.Negociation{}
+			}
+		}
+
+		if len(linesSlice) > 0 {
+			dm.Repo.BulkImport(linesSlice)
 		}
 	}()
 
